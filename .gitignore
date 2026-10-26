@@ -1,0 +1,6 @@
+.venv-p4a/
+.p4a/
+android-sdk/
+bin/
+build/
+*.apk
