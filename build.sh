@@ -43,7 +43,7 @@ fi
 # Use a Python 3.11 build environment regardless of the system Python version.
 P4A_VENV="${P4A_VENV:-$PROJECT_DIR/.venv-p4a}"
 "$UV" python install 3.11
-"$UV" venv --python 3.11 "$P4A_VENV"
+"$UV" venv --python 3.11 --seed "$P4A_VENV" || { rm -rf "$P4A_VENV"; "$UV" venv --python 3.11 --seed "$P4A_VENV"; }
 P4A_PYTHON="$P4A_VENV/bin/python"
 "$P4A_PYTHON" -m pip install --upgrade pip setuptools wheel
 "$P4A_PYTHON" -m pip install 'Cython==0.29.36' 'python-for-android==2024.1.21'
@@ -116,8 +116,8 @@ fi
   'build-tools;34.0.0' \
   'ndk;25.2.9519653'
 
-P4A_REQUIREMENTS="${P4A_REQUIREMENTS:-python3==3.11.5,kivy}"
-ANDROID_ARCHS="${ANDROID_ARCHS:-arm64-v8a,armeabi-v7a}"
+P4A_REQUIREMENTS="${P4A_REQUIREMENTS:-python3==3.11.5,kivy,pygments}"
+ANDROID_ARCHS="${ANDROID_ARCHS:-armeabi-v7a}"
 arch_args=()
 IFS=',' read -r -a arch_list <<< "$ANDROID_ARCHS"
 for arch in "${arch_list[@]}"; do
@@ -147,11 +147,15 @@ tar -C "$PROJECT_DIR" \
   --exclude='./p4a-storage' \
   -cf - . | tar -C "$PRIVATE_DIR" -xf -
 
+# p4a shells out to bare `python3` for cythonization; make sure it resolves to
+# the pinned 3.11 venv (which has Cython installed) rather than system Python.
+export PATH="$P4A_VENV/bin:$PATH"
+
 "$P4A_VENV/bin/p4a" apk \
   --private "$PRIVATE_DIR" \
-  --package "${ANDROID_PACKAGE:-org.stillframe.kivylauncher}" \
-  --name "${ANDROID_APP_NAME:-Kivy Launcher}" \
-  --version "${ANDROID_VERSION:-0.1.0}" \
+  --package "${ANDROID_PACKAGE:-com.minicode.editor}" \
+  --name "${ANDROID_APP_NAME:-MiniCode}" \
+  --version "${ANDROID_VERSION:-0.2.0}" \
   --bootstrap sdl2 \
   --requirements "$P4A_REQUIREMENTS" \
   "${arch_args[@]}" \

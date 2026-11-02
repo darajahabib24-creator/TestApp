@@ -1,45 +1,54 @@
-# Kivy p4a GitHub starter
+# MiniCode — pocket code IDE for Android (Kivy + p4a)
 
-This folder contains a Kivy entry point, a Bash python-for-android (p4a)
-builder, and a GitHub Actions workflow. The script pins the host build tools to
-Python 3.11 and Java 17 to avoid the Python 3.14 and Java 25 errors.
+A free, single-APK mini IDE in the spirit of VS Code for Android: create and
+edit code, run Python, drive the Android shell, install pure-Python packages,
+chat with a free AI assistant, and deploy (zip) your workspace.
 
-## Build in Codespaces or Linux
+## What the app does
 
-Run from this folder:
+| Tab      | Feature |
+|----------|---------|
+| Files    | Browse shared storage, create/open/delete files and folders |
+| Editor   | Syntax-highlighted editor (pygments), open / save / save-as |
+| Run      | Run the current file with bundled Python, or `!command` for the Android shell (`sh`) |
+| Packages | Install pure-Python wheels directly from PyPI (no pip needed on device) |
+| AI       | Free keyless AI chat (Pollinations API) + "explain my file" |
+| Deploy   | Zip your workspace for backup / transfer |
+
+Notes:
+* On Android 11+ tap **Deploy > Open storage settings** and grant All files
+  access so files live in `/storage/emulated/0/minicode`. Without it the app
+  uses private storage.
+* Only pure-Python packages install on-device (C-extension wheels can't be
+  compiled on a phone).
+
+## Build locally (Codespaces / Linux)
 
 ```bash
 chmod +x build.sh
-./build.sh .
+./build.sh .          # defaults to armeabi-v7a (armv7)
+ANDROID_ARCHS=arm64-v8a ./build.sh .   # for 64-bit-only devices
 ```
 
-Or pass the directory containing your app's `main.py`:
+The APK lands in `bin/`. First build downloads the Android SDK + NDK.
 
-```bash
-./build.sh /path/to/your/kivy-project
+## Build on GitHub Actions + download link
+
+1. Commit and push to `main`.
+2. Open the **Actions** tab → run (or it auto-runs on push) **Build Android APK**.
+3. When it finishes, the APK is published as a release:
+
+```
+https://github.com/<your-user>/TestApp/releases/tag/apk
 ```
 
-The APK is placed in `bin/`. First build downloads the Android SDK and NDK and
-can take a while. Keep `main.py` and any assets the app needs in the project
-folder so p4a can package them.
+Download the APK there (the workflow also uploads a `minicode-apk` artifact).
+The CI build targets **armeabi-v7a (armv7)** by default.
 
-## GitHub Actions
+## Customize
 
-Commit this folder to a repository and push to `main` or `master`, or run
-**Build Android APK** from the Actions tab. Download the `kivy-launcher-apk`
-artifact from the completed workflow run.
-
-## Shared storage note
-
-The sample `main.py` checks `/storage/emulated/0/kivy` and lists project folders
-containing `main.py`. On Android 11 and newer, the app must be granted **All
-files access** in Android Settings; the button in the sample opens that
-settings page. Declaring `MANAGE_EXTERNAL_STORAGE` in the APK does not grant it
-automatically. This is intended for a sideloaded personal launcher; Google Play
-restricts that permission.
-
-This starter only lists Python project folders. It does not dynamically execute
-external `main.py` files or install each project's dependencies. p4a packages
-the app's `main.py` and dependencies into the APK. To build your actual app,
-replace the starter `main.py` with your app code, add assets to this project,
-and add p4a-compatible Python dependencies to `P4A_REQUIREMENTS` in `build.sh`.
+* App code: `main.py`
+* App name / package / version: edit the `ANDROID_*` env vars in
+  `.github/workflows/android.yml` or the defaults in `build.sh`
+* Extra Python dependencies: add p4a-compatible names to `P4A_REQUIREMENTS`
+  in `build.sh`
