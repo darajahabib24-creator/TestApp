@@ -151,6 +151,11 @@ tar -C "$PROJECT_DIR" \
 # the pinned 3.11 venv (which has Cython installed) rather than system Python.
 export PATH="$P4A_VENV/bin:$PATH"
 
+dist_args=()
+if [[ -n "${ANDROID_DIST_NAME:-}" ]]; then
+  dist_args+=(--dist-name "$ANDROID_DIST_NAME")
+fi
+
 "$P4A_VENV/bin/p4a" apk \
   --private "$PRIVATE_DIR" \
   --package "${ANDROID_PACKAGE:-com.minicode.editor}" \
@@ -159,6 +164,7 @@ export PATH="$P4A_VENV/bin:$PATH"
   --bootstrap sdl2 \
   --requirements "$P4A_REQUIREMENTS" \
   "${arch_args[@]}" \
+  "${dist_args[@]}" \
   --android-api 34 \
   --ndk-api 23 \
   --sdk-dir "$ANDROIDSDK" \

@@ -728,5 +728,55 @@ class MiniCode(App):
             return lexers.TextLexer()
 
 
+def crash_log(text):
+    """Persist crashes so they can be read with the app's own Files tab."""
+    bases = [
+        "/storage/emulated/0/Download",
+        "/storage/emulated/0",
+        os.path.expanduser("~"),
+        "/data/local/tmp",
+    ]
+    message = f"{text}\n"
+    for base in bases:
+        path = os.path.join(base, "minicode-crash.log")
+        try:
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(message)
+            print(f"[MiniCode] crash log path: {path}")
+            return path
+        except OSError:
+            continue
+    print(f"[MiniCode] CRASH (no log file): {text}")
+    return None
+
+
 if __name__ == "__main__":
-    MiniCode().run()
+    crash_log("=== MiniCode start ===")
+    crash_file = None
+    try:
+        import faulthandler
+
+        bases = ("/storage/emulated/0/Download", "/storage/emulated/0",
+                 os.path.expanduser("~"))
+        for base in bases:
+            try:
+                crash_file = open(os.path.join(base, "minicode-crash.log"), "a",
+                                  buffering=1)
+                break
+            except OSError:
+                continue
+        if crash_file:
+            faulthandler.enable(crash_file)
+    except Exception:
+        pass
+
+    try:
+        MiniCode().run()
+    except Exception:
+        import traceback
+
+        crash_log(traceback.format_exc())
+        raise
+    finally:
+        if crash_file:
+            crash_file.flush()
