@@ -52,24 +52,51 @@ TXT = (0.90, 0.90, 0.93, 1)
 AI_URL = "https://text.pollinations.ai/"
 PYPI_URL = "https://pypi.org/pypi/{pkg}/json"
 
-# Shared storage root; falls back to app-internal storage when the user has
-# not granted "All files access".
+# Shared storage root; falls back to app-internal files dir when the user has
+# not granted "All files access" (os.path.expanduser("~") is NOT reliable in
+# p4a apps — it can point to /data, which is not writable).
 SHARED = "/storage/emulated/0"
+
+_files_dir_cache = None
+
+
+def app_files_dir():
+    """The app's always-writable private directory via Android JNI."""
+    global _files_dir_cache
+    if _files_dir_cache:
+        return _files_dir_cache
+    try:
+        from jnius import autoclass
+
+        activity = autoclass("org.kivy.android.PythonActivity").mActivity
+        _files_dir_cache = str(activity.getFilesDir().getAbsolutePath())
+    except Exception:
+        for cand in (os.getcwd(), os.path.expanduser("~")):
+            if cand and _writable(cand):
+                _files_dir_cache = cand
+                break
+    return _files_dir_cache
+
+
+def _writable(path):
+    try:
+        os.makedirs(path, exist_ok=True)
+        probe = os.path.join(path, ".probe")
+        with open(probe, "w") as fh:
+            fh.write("1")
+        os.remove(probe)
+        return True
+    except OSError:
+        return False
 
 
 def workspace_root():
     shared_ws = os.path.join(SHARED, "minicode")
-    try:
-        os.makedirs(shared_ws, exist_ok=True)
-        probe = os.path.join(shared_ws, ".probe")
-        with open(probe, "w") as fh:
-            fh.write("1")
-        os.remove(probe)
+    if _writable(shared_ws):
         return shared_ws
-    except OSError:
-        internal = os.path.join(os.path.expanduser("~"), "workspace")
-        os.makedirs(internal, exist_ok=True)
-        return internal
+    internal = os.path.join(app_files_dir(), "workspace")
+    os.makedirs(internal, exist_ok=True)
+    return internal
 
 
 def human_size(n):
@@ -638,7 +665,7 @@ class DeployScreen(Screen):
 
     def zip_workspace(self):
         src = self.app.workspace
-        target = os.path.join(src if os.access(src, os.W_OK) else os.path.expanduser("~"),
+        target = os.path.join(src if os.access(src, os.W_OK) else app_files_dir(),
                               "minicode_project.zip")
         try:
             with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -673,7 +700,7 @@ class MiniCode(App):
 
     def build(self):
         self.workspace = workspace_root()
-        self.site_dir = os.path.join(os.path.expanduser("~"), "site-packages")
+        self.site_dir = os.path.join(app_files_dir(), "site-packages")
         self._ensure_path()
         self.home_note = (
             f"Workspace: {self.workspace}" +
@@ -732,14 +759,17 @@ def crash_log(text):
     """Persist crashes so they can be read with the app's own Files tab."""
     bases = [
         "/storage/emulated/0/Download",
-        "/storage/emulated/0",
-        os.path.expanduser("~"),
+        os.path.join(SHARED, "minicode"),
+        app_files_dir(),
         "/data/local/tmp",
     ]
     message = f"{text}\n"
     for base in bases:
+        if not base or base == SHARED:
+            continue
         path = os.path.join(base, "minicode-crash.log")
         try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "a", encoding="utf-8") as fh:
                 fh.write(message)
             print(f"[MiniCode] crash log path: {path}")
@@ -756,10 +786,12 @@ if __name__ == "__main__":
     try:
         import faulthandler
 
-        bases = ("/storage/emulated/0/Download", "/storage/emulated/0",
-                 os.path.expanduser("~"))
+        bases = ["/storage/emulated/0/Download", os.path.join(SHARED, "minicode"),
+                 app_files_dir()]
         for base in bases:
             try:
+                if base:
+                    os.makedirs(base, exist_ok=True)
                 crash_file = open(os.path.join(base, "minicode-crash.log"), "a",
                                   buffering=1)
                 break
