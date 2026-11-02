@@ -65,13 +65,79 @@ class MainActivity : Activity() {
     private lateinit var navButtons: Map<String, Button>
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
         super.onCreate(savedInstanceState)
-        buildUi()
+        installCrashHandler()
+        try {
+            installSplashScreen()
+        } catch (e: Exception) {
+            android.util.Log.e("MiniCode", "splash: $e")
+        }
+
+        try {
+            buildUi()
+        } catch (e: Exception) {
+            val report = android.util.Log.getStackTraceString(e) + "\n" +
+                "Build: workflow " + Build.MANUFACTURER + " " + Build.MODEL +
+                " API " + Build.VERSION.SDK_INT
+            try {
+                File(filesDir, "minicode-native-crash.log").appendText(report + "\n\n")
+            } catch (ignored: Exception) {
+            }
+            runOnUiThread { saveCrashToDownloads(report) }
+            setContentView(textView("Startup error:\n$report", 13f, VS_TEXT).apply {
+                setBackgroundColor(VS_DARK)
+                setPadding(32, 32, 32, 32)
+            })
+            return
+        }
         initWorkspace()
         cwd = workspace
         refreshFiles()
         status("Workspace: ${workspace.absolutePath}")
+    }
+
+    private fun installCrashHandler() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            try {
+                val report = "thread: ${thread.name}\n" +
+                    android.util.Log.getStackTraceString(error)
+                File(filesDir, "minicode-native-crash.log").appendText(report + "\n\n")
+                runOnUiThread { saveCrashToDownloads(report) }
+            } catch (ignored: Exception) {
+            }
+            previous?.uncaughtException(thread, error)
+        }
+    }
+
+    private fun saveCrashToDownloads(text: String) {
+        // MediaStore works without any storage permission on API 29+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return
+        }
+        try {
+            val values = android.content.ContentValues()
+            values.put(
+                android.provider.MediaStore.MediaColumns.DISPLAY_NAME,
+                "minicode-native-crash.txt"
+            )
+            values.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+            values.put(
+                android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+                Environment.DIRECTORY_DOWNLOADS
+            )
+            val collection =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                    android.provider.MediaStore.Downloads.getContentUri("external")
+                else
+                    android.provider.MediaStore.Files.getContentUri("external")
+            val uri = contentResolver.insert(collection, values) ?: return
+            contentResolver.openOutputStream(uri)?.use { os ->
+                os.write(text.toByteArray())
+                os.flush()
+            }
+        } catch (ignored: Exception) {
+        }
     }
 
     override fun onBackPressed() {
