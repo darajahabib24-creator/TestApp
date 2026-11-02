@@ -43,8 +43,8 @@ class MainActivity : Activity() {
     private val VS_TABBAR = 0xFF2D2D2D.toInt()
     private val MONO = Typeface.MONOSPACE
 
-    private var workspace: File = File(filesDir, "workspace")
-    private var cwd: File = workspace
+    private lateinit var workspace: File
+    private lateinit var cwd: File
     private var selectedForAction: File? = null
 
     private val openTabs = LinkedHashMap<String, CodeEditor>()
@@ -70,6 +70,10 @@ class MainActivity : Activity() {
 
         app.checkpoint("onCreate start")
 
+        app.checkpoint("initWorkspace")
+        initWorkspace()
+        cwd = workspace
+
         try {
             app.checkpoint("buildUi: start")
             buildUi()
@@ -92,9 +96,6 @@ class MainActivity : Activity() {
             return
         }
 
-        app.checkpoint("initWorkspace")
-        initWorkspace()
-        cwd = workspace
         app.checkpoint("refreshFiles")
         refreshFiles()
         status("Workspace: ${workspace.absolutePath}")
