@@ -89,8 +89,9 @@ def ui_label(text="", **kw):
 
 
 def ui_button(text, callback, height=dp(44), **kw):
-    btn = Button(text=text, size_hint_y=None, height=height,
-                 background_normal="", background_color=ACCENT, **kw)
+    kw.setdefault("background_color", ACCENT)
+    kw.setdefault("background_normal", "")
+    btn = Button(text=text, size_hint_y=None, height=height, **kw)
     btn.bind(on_release=callback)
     return btn
 
@@ -175,7 +176,12 @@ class FilesScreen(Screen):
         if self.cwd != "/":
             entries.insert(0, ("..", "up"))
         for name, kind in entries:
-            text = f"[{kind.upper()}] {name}" if kind in (True, "up") else name
+            if kind is True:
+                text = f"[DIR] {name}"
+            elif kind == "up":
+                text = f"[UP] {name}"
+            else:
+                text = name
             self.grid.add_widget(
                 ui_button(text, lambda *_a, n=name, k=kind: self.open_entry(n, k),
                           background_color=PANEL,
@@ -257,7 +263,7 @@ class EditorScreen(Screen):
                                     font_size="12sp")
         root.add_widget(self.title_label)
         self.editor = CodeInput(font_size="13sp", background_color=DARK,
-                                foreground_color=TXT, autoforce_down=True)
+                                foreground_color=TXT)
         root.add_widget(self.editor)
         self.add_widget(root)
 
@@ -461,7 +467,7 @@ class PackagesScreen(Screen):
             "Packages with C extensions cannot be compiled on-device.\n\n"
             "Installed packages:", font_size="12sp", size_hint_y=None,
             height=dp(110))
-        self.info.bind(width=lambda w, s: setattr(w, "text_size", s))
+        self.info.bind(width=lambda w, s: setattr(w, "text_size", (s, None)))
         root.add_widget(self.info)
         self.grid = GridLayout(cols=1, size_hint_y=None, spacing=dp(2))
         self.grid.bind(minimum_height=self.grid.setter("height"))
@@ -619,7 +625,7 @@ class DeployScreen(Screen):
         root.add_widget(ui_button("Open storage settings",
                                   lambda *_: self.storage_settings()))
         self.info = ui_label("", font_size="13sp", size_hint_y=None, height=dp(220))
-        self.info.bind(width=lambda w, s: setattr(w, "text_size", s))
+        self.info.bind(width=lambda w, s: setattr(w, "text_size", (s, None)))
         root.add_widget(self.info)
         self.add_widget(root)
 
