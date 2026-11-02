@@ -7,9 +7,4 @@
         <item name="android:colorPrimary">@color/vs_accent</item>
         <item name="android:textColorPrimary">@color/vs_text</item>
     </style>
-    <style name="Theme.MiniCode.Splash" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/vs_dark</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_minicode</item>
-        <item name="postSplashScreenTheme">@style/Theme.MiniCode</item>
-    </style>
 </resources>

@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
 import android.view.View
+import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.BaseAdapter
@@ -24,7 +25,6 @@ import android.widget.ListView
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import io.github.rosemoe.sora.widget.CodeEditor
 import io.github.rosemoe.sora.widget.schemes.EditorColorScheme
 import java.io.File
@@ -66,78 +66,40 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        installCrashHandler()
-        try {
-            installSplashScreen()
-        } catch (e: Exception) {
-            android.util.Log.e("MiniCode", "splash: $e")
-        }
+        val app = application as MiniCodeApp
+
+        app.checkpoint("onCreate start")
 
         try {
+            app.checkpoint("buildUi: start")
             buildUi()
+            app.checkpoint("buildUi: done")
         } catch (e: Exception) {
-            val report = android.util.Log.getStackTraceString(e) + "\n" +
-                "Build: workflow " + Build.MANUFACTURER + " " + Build.MODEL +
-                " API " + Build.VERSION.SDK_INT
+            val report = "API " + Build.VERSION.SDK_INT + " " +
+                Build.MANUFACTURER + " " + Build.MODEL + "\n" +
+                android.util.Log.getStackTraceString(e)
             try {
-                File(filesDir, "minicode-native-crash.log").appendText(report + "\n\n")
+                File(filesDir, "minicode-crash.log").appendText(report + "\n\n")
             } catch (ignored: Exception) {
             }
-            runOnUiThread { saveCrashToDownloads(report) }
-            setContentView(textView("Startup error:\n$report", 13f, VS_TEXT).apply {
-                setBackgroundColor(VS_DARK)
-                setPadding(32, 32, 32, 32)
-            })
+            try {
+                app.saveToDownloads("minicode-crash.txt", report)
+            } catch (ignored: Exception) {
+            }
+            setContentView(textView("Startup error:\n$report\n\nCheckpoints:", 13f, VS_TEXT)
+                .apply { setBackgroundColor(VS_DARK)
+                    textSize = 12f })
             return
         }
+
+        app.checkpoint("initWorkspace")
         initWorkspace()
         cwd = workspace
+        app.checkpoint("refreshFiles")
         refreshFiles()
         status("Workspace: ${workspace.absolutePath}")
-    }
-
-    private fun installCrashHandler() {
-        val previous = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
-            try {
-                val report = "thread: ${thread.name}\n" +
-                    android.util.Log.getStackTraceString(error)
-                File(filesDir, "minicode-native-crash.log").appendText(report + "\n\n")
-                runOnUiThread { saveCrashToDownloads(report) }
-            } catch (ignored: Exception) {
-            }
-            previous?.uncaughtException(thread, error)
-        }
-    }
-
-    private fun saveCrashToDownloads(text: String) {
-        // MediaStore works without any storage permission on API 29+
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            return
-        }
-        try {
-            val values = android.content.ContentValues()
-            values.put(
-                android.provider.MediaStore.MediaColumns.DISPLAY_NAME,
-                "minicode-native-crash.txt"
-            )
-            values.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/plain")
-            values.put(
-                android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
-                Environment.DIRECTORY_DOWNLOADS
-            )
-            val collection =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
-                    android.provider.MediaStore.Downloads.getContentUri("external")
-                else
-                    android.provider.MediaStore.Files.getContentUri("external")
-            val uri = contentResolver.insert(collection, values) ?: return
-            contentResolver.openOutputStream(uri)?.use { os ->
-                os.write(text.toByteArray())
-                os.flush()
-            }
-        } catch (ignored: Exception) {
-        }
+        app.checkpoint("all done")
+        app.publishLog()
     }
 
     override fun onBackPressed() {
@@ -351,7 +313,43 @@ class MainActivity : Activity() {
         addRow(root, tabScroll)
         addRow(root, panelHost, fill = true)
         addRow(root, nav)
-        setContentView(root)
+        val wrapper = FrameLayout(this)
+        wrapper.addView(
+            root,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        // In-app splash overlay (library-free, no platform risk)
+        val splash = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(VS_DARK)
+            addView(TextView(this@MainActivity).apply {
+                text = "MINICODE"
+                textSize = 34f
+                typeface = Typeface.MONOSPACE
+                setTextColor(VS_ACCENT)
+                gravity = Gravity.CENTER
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "code editor • terminal • deploy"
+                textSize = 12f
+                typeface = Typeface.MONOSPACE
+                setTextColor(VS_TEXT)
+                gravity = Gravity.CENTER
+            })
+        }
+        wrapper.addView(
+            splash,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        setContentView(wrapper)
+        splash.postDelayed({ (wrapper as? ViewGroup)?.removeView(splash) }, 700)
         showPanel("editor")
     }
 
