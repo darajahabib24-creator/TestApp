@@ -27,7 +27,7 @@ jobs:
       uses:
        mcr.microsoft.com/windows/servercomcr.microsoft.com/windws/servercore:ltsc2022
       with:
-        shell: powershell
+         shell: powershell
         arguments: |
           Set-ExecutionPolicy
           Bypass -Scope CurrentUser -Force
