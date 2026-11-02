@@ -1,7 +1,6 @@
-name: Freeconnect Windows 11
+name: Run Windows 11
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
@@ -23,9 +22,23 @@ jobs:
     - name: Build project
       run: npm run build
 
-    - name: Deploy to GitHub
-       Pages
+    - name: Run Windows 11
       uses:
-       actions/gh-pages@v2
+       mcr.microsoft.com/windows/servercomcr.microsoft.com/windws/servercore:ltsc2022
       with:
-        publish_dir: ./dist
+        shell: powershell
+        arguments: |
+          Set-ExecutionPolicy
+          Bypass -Scope CurrentUser -Force
+          Start-Process
+          powershell -ArgumentList "cd
+          'C:\path\to\your\project' &&
+          ./build-and-deploy.ps1" -Verb
+          RunAs
+
+    - name: Upload artifact
+      uses:
+       actions/upload-artifact@v2
+      with:
+        name: project
+        path: ./dist
