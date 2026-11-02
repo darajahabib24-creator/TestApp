@@ -1,45 +1,28 @@
-name: Run Windows 11
+name: Interactive Ubuntu Console
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch: # Allows you to manually trigger this from the GitHub Actions tab
 
 jobs:
-  build_and_deploy:
-    runs-on: Windows-11
+  interactive-session:
+    runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: Install dependencies
-      run: npm install
+      - name: Free Up Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
 
-    - name: Build project
-      run: npm run build
-
-    - name: Run Windows 11
-      uses:
-       mcr.microsoft.com/windows/servercomcr.microsoft.com/windws/servercore:ltsc2022
-      with:
-         shell: powershell
-        arguments: |
-          Set-ExecutionPolicy
-          Bypass -Scope CurrentUser -Force
-          Start-Process
-          powershell -ArgumentList "cd
-          'C:\path\to\your\project' &&
-          ./build-and-deploy.ps1" -Verb
-          RunAs
-
-    - name: Upload artifact
-      uses:
-       actions/upload-artifact@v2
-      with:
-        name: project
-        path: ./dist
+      - name: Launch Interactive SSH Terminal
+        uses: owenthereal/action-upterm@v2
+        with:
+          ## Change this to false so it doesn't look for GitHub SSH keys
+          limit-access-to-actor: false
+          
+          
