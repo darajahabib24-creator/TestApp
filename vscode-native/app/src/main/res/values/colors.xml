@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <color name="vs_dark">#1E1E1E</color>
-    <color name="vs_panel">#252526</color>
-    <color name="vs_side">#333333</color>
-    <color name="vs_accent">#0A7ACC</color>
-    <color name="vs_text">#CCCCCC</color>
-</resources>
