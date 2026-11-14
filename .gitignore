@@ -4,3 +4,5 @@ android-sdk/
 bin/
 build/
 *.apk
+__pycache__/
+*.log

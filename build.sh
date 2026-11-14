@@ -27,7 +27,7 @@ fi
 as_root apt-get update
 as_root apt-get install -y curl unzip zip build-essential git pkg-config \
   autoconf automake cmake libtool libltdl-dev libffi-dev libssl-dev \
-  libncurses5-dev libncursesw5-dev zlib1g-dev
+  libncurses-dev zlib1g-dev
 
 # p4a's pinned Cython stack is not compatible with host Python 3.14.
 if ! command -v uv >/dev/null 2>&1; then
@@ -125,8 +125,9 @@ for arch in "${arch_list[@]}"; do
 done
 
 permission_args=()
-for permission in INTERNET READ_EXTERNAL_STORAGE WRITE_EXTERNAL_STORAGE MANAGE_EXTERNAL_STORAGE; do
-  permission_args+=(--permission "$permission")
+IFS=',' read -r -a permission_list <<< "${ANDROID_PERMISSIONS-INTERNET,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,MANAGE_EXTERNAL_STORAGE}"
+for permission in "${permission_list[@]}"; do
+  [[ -n "$permission" ]] && permission_args+=(--permission "$permission")
 done
 
 P4A_STORAGE_DIR="${P4A_STORAGE_DIR:-${RUNNER_TEMP:-$HOME}/p4a-storage}"
@@ -141,6 +142,7 @@ tar -C "$PROJECT_DIR" \
   --exclude='./.git' \
   --exclude='./.github' \
   --exclude='./.venv*' \
+  --exclude='./__pycache__' \
   --exclude='./bin' \
   --exclude='./build' \
   --exclude='./android-sdk' \
