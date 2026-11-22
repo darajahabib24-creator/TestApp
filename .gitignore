@@ -1,8 +1,0 @@
-.venv-p4a/
-.p4a/
-android-sdk/
-bin/
-build/
-*.apk
-__pycache__/
-*.log
