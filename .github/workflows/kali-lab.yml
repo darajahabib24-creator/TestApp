@@ -1,0 +1,185 @@
+name: Kali Lab
+
+# Self-contained: the container entrypoint and the provisioning script are
+# written by this workflow itself, so the repository only needs this one file.
+#
+# Required repository secrets:
+#   TAILSCALE_AUTH_KEY  - tailscale auth key (tag it if your tailnet enforces tags)
+#   KALI_SSH_PUBKEY     - ssh public key allowed to log in as root
+#
+# For a lab that stays up after the run, dispatch this on a SELF-HOSTED runner.
+# On github-hosted runners the container dies with the job.
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Runner label (use a self-hosted label for a persistent box)"
+        default: "ubuntu-latest"
+      toolset:
+        description: "Kali metapackage to install"
+        default: "kali-linux-headless"
+      desktop:
+        description: "Install XFCE desktop + xrdp"
+        type: boolean
+        default: true
+
+env:
+  IMAGE: kalivm:ready
+  CONTAINER: kalivm
+
+jobs:
+  provision:
+    runs-on: ${{ github.event.inputs.runner }}
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- Network: put the runner on the tailnet -------------------------
+      - name: Install Tailscale
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo systemctl enable --now tailscaled
+
+      - name: Join tailnet
+        run: >
+          sudo tailscale up
+          --authkey "${{ secrets.TAILSCALE_AUTH_KEY }}"
+          --hostname "kali-lab-${{ github.run_id }}"
+
+      # --- Persistent layout + scripts (written here; no repo files needed)
+      - name: Prepare lab directory and scripts
+        run: |
+          sudo mkdir -p "$HOME/kali-data/.ssh"
+          printf '%s\n' "${{ secrets.KALI_SSH_PUBKEY }}" | sudo tee "$HOME/kali-data/.ssh/authorized_keys" >/dev/null
+          sudo chmod 700 "$HOME/kali-data/.ssh"
+          sudo chmod 600 "$HOME/kali-data/.ssh/authorized_keys"
+
+          cat > "$HOME/kali-data/start.sh" <<'START_SH'
+          #!/bin/sh
+          set -e
+          mkdir -p /run/sshd /run/xrdp/sockdir
+          rm -f /var/run/xrdp/*.pid /run/xrdp/sockdir/*.lock
+          /etc/init.d/xrdp start >/dev/null 2>&1 || true
+          exec /usr/sbin/sshd -D -e
+          START_SH
+          chmod +x "$HOME/kali-data/start.sh"
+
+          cat > "$HOME/kali-data/setup.sh" <<'SETUP_SH'
+          #!/bin/bash
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+
+          TOOLSET="${TOOLSET:-kali-linux-headless}"
+          ENABLE_DESKTOP="${ENABLE_DESKTOP:-true}"
+
+          echo "[setup] apt update"
+          apt-get update -qq
+
+          echo "[setup] installing toolset: ${TOOLSET}"
+          apt-get install -y --no-install-recommends "$TOOLSET" openssh-server sudo
+
+          sed -i -E 's/^#?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+          sed -i -E 's/^#?PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+          sed -i -E 's/^#?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+
+          mkdir -p /root/.ssh
+          chmod 700 /root/.ssh
+          chmod 600 /root/.ssh/authorized_keys
+          sed -i -E 's/^#?StrictModes.*/StrictModes no/' /etc/ssh/sshd_config
+          /usr/sbin/sshd -t
+
+          if [ "$ENABLE_DESKTOP" = "true" ]; then
+            echo "[setup] installing XFCE + xrdp + X server"
+            apt-get install -y --no-install-recommends \
+              kali-desktop-xfce xrdp xorgxrdp xserver-xorg-core openssl
+
+            rm -f /etc/xrdp/cert.pem /etc/xrdp/key.pem
+            openssl req -x509 -newkey rsa:2048 -nodes \
+              -keyout /etc/xrdp/key.pem -out /etc/xrdp/cert.pem \
+              -days 3650 -subj "/CN=kalivm" 2>/dev/null
+            chown root:xrdp /etc/xrdp/key.pem /etc/xrdp/cert.pem
+            chmod 640 /etc/xrdp/key.pem
+            chmod 644 /etc/xrdp/cert.pem
+          fi
+
+          echo "[setup] done"
+          SETUP_SH
+          chmod +x "$HOME/kali-data/setup.sh"
+
+      - name: Pull Kali base image
+        run: docker pull kalilinux/kali-rolling
+
+      # --- Bootstrap container (no ports yet) -----------------------------
+      - name: Start bootstrap container
+        run: |
+          docker rm -f "$CONTAINER-setup" >/dev/null 2>&1 || true
+          docker run -d --name "$CONTAINER-setup" \
+            -v "$HOME/kali-data:/root" \
+            kalilinux/kali-rolling sleep infinity
+
+      - name: Provision Kali (tools, SSH, desktop, RDP)
+        run: |
+          docker exec \
+            -e TOOLSET="${{ github.event.inputs.toolset }}" \
+            -e ENABLE_DESKTOP="${{ github.event.inputs.desktop }}" \
+            "$CONTAINER-setup" bash /root/setup.sh
+
+      # --- Freeze the installed packages into an image, then run it -------
+      - name: Commit image and start the lab container
+        run: |
+          set -euo pipefail
+          TSIP="$(sudo tailscale ip -4)"
+          docker commit "$CONTAINER-setup" "$IMAGE"
+          docker rm -f "$CONTAINER-setup" "$CONTAINER" >/dev/null 2>&1 || true
+          docker run -d --name "$CONTAINER" --restart unless-stopped --hostname "$CONTAINER" \
+            --cap-add NET_RAW --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --cap-add SYS_PTRACE \
+            -v "$HOME/kali-data:/root" \
+            -v "$HOME/kali-data/start.sh:/start.sh:ro" \
+            -p "$TSIP:2222:22" \
+            -p "$TSIP:3389:3389" \
+            "$IMAGE" /start.sh
+
+      - name: Wait for services
+        run: sleep 8
+
+      # --- Verify before declaring success -------------------------------
+      - name: Verify SSH (key auth)
+        run: |
+          set -euo pipefail
+          TSIP="$(sudo tailscale ip -4)"
+          TMPKEY="$(mktemp -u /tmp/kalikey.XXXXXX)"
+          ssh-keygen -t ed25519 -N '' -f "$TMPKEY" -q
+          sudo tee -a "$HOME/kali-data/.ssh/authorized_keys" < "$TMPKEY.pub" >/dev/null
+          ssh -p 2222 -i "$TMPKEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null -o BatchMode=yes root@"$TSIP" 'hostname; id'
+          sudo sed -i "\#$(cat "$TMPKEY.pub")#d" "$HOME/kali-data/.ssh/authorized_keys"
+          rm -f "$TMPKEY" "$TMPKEY.pub"
+          sudo chown -R "$(id -u):$(id -g)" "$HOME/kali-data"
+          echo "Authorized keys installed:"
+          awk '{print $1, $3}' "$HOME/kali-data/.ssh/authorized_keys"
+
+      - name: Install RDP test client
+        if: ${{ github.event.inputs.desktop }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq freerdp3-x11 || sudo apt-get install -y -qq freerdp2-x11
+          sudo apt-get install -y -qq xvfb
+
+      # A wrong password must reach PAM and be rejected: that proves sesman
+      # and the auth path work, without needing the real password.
+      - name: Verify RDP auth path
+        if: ${{ github.event.inputs.desktop }}
+        run: |
+          TSIP="$(sudo tailscale ip -4)"
+          RDP_BIN="$(command -v xfreerdp3 || command -v xfreerdp)"
+          xvfb-run -a "$RDP_BIN" /v:"$TSIP":3389 /u:root /p:definitely-wrong /cert:ignore || true
+          docker exec "$CONTAINER" grep -q AUTHFAIL /var/log/xrdp-sesman.log \
+            && echo "RDP auth path OK (sesman reachable, bad password rejected as expected)"
+
+      - name: Show connection details
+        run: |
+          TSIP="$(sudo tailscale ip -4)"
+          echo "::notice title=Kali lab ready::ssh root@$TSIP -p 2222  |  RDP $TSIP:3389 (user root)"
+          echo "Set the RDP password yourself over SSH:  ssh -p 2222 root@$TSIP   then run: passwd"
