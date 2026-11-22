@@ -52,9 +52,10 @@ jobs:
       - name: Prepare lab directory and scripts
         run: |
           sudo mkdir -p "$HOME/kali-data/.ssh"
-          printf '%s\n' "${{ secrets.KALI_SSH_PUBKEY }}" | sudo tee "$HOME/kali-data/.ssh/authorized_keys" >/dev/null
-          sudo chmod 700 "$HOME/kali-data/.ssh"
-          sudo chmod 600 "$HOME/kali-data/.ssh/authorized_keys"
+          sudo chown -R "$(id -u):$(id -g)" "$HOME/kali-data"
+          printf '%s\n' "${{ secrets.KALI_SSH_PUBKEY }}" > "$HOME/kali-data/.ssh/authorized_keys"
+          chmod 700 "$HOME/kali-data/.ssh"
+          chmod 600 "$HOME/kali-data/.ssh/authorized_keys"
 
           cat > "$HOME/kali-data/start.sh" <<'START_SH'
           #!/bin/sh
